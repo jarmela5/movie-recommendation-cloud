@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catalogo de filmes - Movie Recommendation Hub</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Movie Recommendation Hub</h1>
+        <nav>
+            <a href="index.html">Discover</a>
+            <a href="movies.html" aria-current="page">Movies</a>
+            <a href="recommendations.html" id="navRecommendations" class="hidden">Recommendations</a>
+            <a href="profile.html" id="navProfile" class="hidden">My Profile</a>
+            <button id="authBtn">Login</button>
+        </nav>
+    </header>
+
+    <main>
+        <section>
+            <h2>Catalogo de filmes</h2>
+            <p>Procura um filme pelo titulo ou explora o catalogo completo.</p>
+            <form id="movieSearchForm" role="search">
+                <label for="movieQuery">Titulo do filme</label>
+                <div class="search-controls">
+                    <input id="movieQuery" name="query" type="search"
+                           placeholder="Ex.: Toy Story" autocomplete="off">
+                    <button type="submit">Pesquisar</button>
+                </div>
+            </form>
+            <p id="searchStatus" role="status" aria-live="polite"></p>
+            <div id="movieGrid" class="grid"></div>
+            <div class="pagination" aria-label="Paginacao">
+                <button id="previousPage" type="button" disabled>Anterior</button>
+                <span id="pageLabel">Pagina 1</span>
+                <button id="nextPage" type="button" disabled>Seguinte</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="common.js"></script>
+    <script>
+        const movieSearchForm = document.getElementById('movieSearchForm');
+        const movieQuery = document.getElementById('movieQuery');
+        const movieGrid = document.getElementById('movieGrid');
+        const searchStatus = document.getElementById('searchStatus');
+        const previousPage = document.getElementById('previousPage');
+        const nextPage = document.getElementById('nextPage');
+        const pageLabel = document.getElementById('pageLabel');
+        let currentPage = 1;
+
+        function movieCard(movie) {
+            const genres = movie.genres?.length ? movie.genres.join(', ') : 'Genero desconhecido';
+            const rating = Number(movie.rating) > 0
+                ? `${Number(movie.rating).toFixed(1)}/5`
+                : 'Sem classificacao';
+
+            return `
+                <article class="card movie-card">
+                    <h3>${esc(movie.title)}</h3>
+                    <p>${esc(genres)}</p>
+                    <p><strong>Classificacao:</strong> ${esc(rating)}</p>
+                </article>
+            `;
+        }
+
+        async function loadMovies(page = 1) {
+            const query = movieQuery.value.trim();
+            const path = query
+                ? `/api/movies/search?query=${encodeURIComponent(query)}&page=${page}`
+                : `/api/movies?page=${page}`;
+
+            currentPage = page;
+            movieGrid.innerHTML = '<p>A carregar filmes...</p>';
+            searchStatus.textContent = '';
+            previousPage.disabled = true;
+            nextPage.disabled = true;
+
+            try {
+                const movies = await api(path);
+                movieGrid.innerHTML = movies.length
+                    ? movies.map(movieCard).join('')
+                    : '<p>Nao foram encontrados filmes.</p>';
+                searchStatus.textContent = query
+                    ? `${movies.length} resultado(s) para "${query}".`
+                    : 'Catalogo completo.';
+                pageLabel.textContent = `Pagina ${currentPage}`;
+                previousPage.disabled = currentPage === 1;
+                nextPage.disabled = movies.length < 20;
+            } catch (error) {
+                movieGrid.innerHTML = `<p> nao foi possivel carregar o catalogo: ${esc(error.message)}</p>`;
+                searchStatus.textContent = '';
+            }
+        }
+
+        movieSearchForm.addEventListener('submit', event => {
+            event.preventDefault();
+            loadMovies(1);
+        });
+        previousPage.addEventListener('click', () => loadMovies(currentPage - 1));
+        nextPage.addEventListener('click', () => loadMovies(currentPage + 1));
+
+        loadNav();
+        loadMovies();
+    </script>
+</body>
+</html>

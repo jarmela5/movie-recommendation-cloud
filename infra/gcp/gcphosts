@@ -1,0 +1,28 @@
+# file: gcphosts
+# for GCP tenant hosts file
+
+# Modify the line with the ansible_host for the public IP address of your Tenant
+# For that, un-comment the following line before running instances configuration
+master    ansible_host=xx.xxx.xxx.xx ansible_user=ubuntu ansible_connection=ssh
+worker1        ansible_host=xx.xxx.xxx.xx ansible_user=ubuntu ansible_connection=ssh
+worker2        ansible_host=xx.xx.xx.xx ansible_user=ubuntu ansible_connection=ssh
+worker3        ansible_host=xx.xx.xx.xx ansible_user=ubuntu ansible_connection=ssh
+#worker4          ansible_host=XX.XX.XX.XX ansible_user=ubuntu ansible_connection=ssh
+
+# The local deployment host VM
+[osmgmt]
+localhost           ansible_connection=local
+
+# Contains the web servers
+[workers]
+worker1
+worker2
+worker3
+#worker4
+
+[targets]
+master
+worker1
+worker2
+worker3
+#worker4

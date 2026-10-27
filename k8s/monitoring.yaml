@@ -1,0 +1,426 @@
+# Monitoring server: Prometheus + Grafana, in the movie-app namespace.
+#
+# Prometheus discovers the backend pods through the Kubernetes API instead of
+# using fixed hostnames, so scaling a Deployment to more replicas is picked up
+# automatically (scraping the Service DNS name would hit one random pod per
+# scrape and produce misleading numbers).
+#
+# Apply with the other manifests:  kubectl apply -f k8s/
+# Grafana is published on NodePort 30030, Prometheus on 30090.
+#
+# The dashboard JSON below is a copy of monitoring/grafana/dashboard.json,
+# which the Docker Compose stack mounts directly. After editing that file,
+# refresh the ConfigMap with:
+#
+#   kubectl -n movie-app create configmap grafana-dashboard \
+#     --from-file=dashboard.json=monitoring/grafana/dashboard.json \
+#     --dry-run=client -o yaml | kubectl apply -f -
+
+# --------------------------------------------------------------------------
+# RBAC: Prometheus needs to read endpoints to discover pods. Scoped to a Role
+# in this namespace only -- it never needs cluster-wide read access, because
+# the scrape config is restricted to the movie-app namespace.
+# --------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: movie-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus
+  namespace: movie-app
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus
+  namespace: movie-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: movie-app
+---
+# --------------------------------------------------------------------------
+# Prometheus
+# --------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: movie-app
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 10s
+      evaluation_interval: 10s
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ["localhost:9090"]
+
+      # One job for all three instrumented services. Endpoint discovery
+      # returns every pod behind each Service. User, Catalog and Recommendations
+      # currently have one replica each; discovery also handles additional pods.
+      - job_name: movie-app
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names: ["movie-app"]
+        relabel_configs:
+          # The frontend is plain nginx with no /metrics endpoint, so only the
+          # three instrumented services are kept. This needs no annotations on
+          # the existing Deployments.
+          - source_labels: [__meta_kubernetes_service_name]
+            regex: "user|catalog|recommendations"
+            action: keep
+          # Gives every series a "service" label, which the dashboard groups by.
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: service
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: movie-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.1.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            # Keeping a short retention window keeps the on-disk size small;
+            # this is a demonstration system, not a long-term metrics store.
+            - --storage.tsdb.retention.time=6h
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        # emptyDir: metrics history is lost if the pod restarts. Fine for a
+        # demonstration; a PersistentVolumeClaim would be the change to make
+        # if the history had to survive.
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: movie-app
+spec:
+  type: NodePort
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+      nodePort: 30090
+---
+# --------------------------------------------------------------------------
+# Grafana
+# --------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  namespace: movie-app
+data:
+  datasource.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: false
+  dashboards.yml: |
+    apiVersion: 1
+    providers:
+      - name: g36
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard
+  namespace: movie-app
+data:
+  dashboard.json: |
+    {
+      "uid": "g36-overview",
+      "title": "g36 - Movie Recommendation Hub",
+      "tags": ["g36", "psia"],
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "10s",
+      "time": { "from": "now-15m", "to": "now" },
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Service health (1 = up)",
+          "description": "Prometheus scrape status for each instrumented service.",
+          "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "up{service=~\"user|catalog|recommendations\"}",
+              "legendFormat": "{{service}}",
+              "instant": true
+            }
+          ],
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto",
+            "justifyMode": "auto",
+            "orientation": "horizontal"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+                { "type": "value", "options": { "1": { "text": "UP", "color": "green", "index": 1 } } }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Request rate (req/s)",
+          "description": "User is instrumented with prometheus_flask_exporter, catalog and recommendations with prometheus-fastapi-instrumentator, so the two metric families are queried separately.",
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (service) (rate(http_requests_total[1m]))",
+              "legendFormat": "{{service}}"
+            },
+            {
+              "refId": "B",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (service) (rate(flask_http_request_total[1m]))",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "min": 0,
+              "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "95th percentile latency",
+          "description": "Computed from the request duration histograms of both exporters.",
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "{{service}}"
+            },
+            {
+              "refId": "B",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "histogram_quantile(0.95, sum by (service, le) (rate(flask_http_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Server error rate (5xx req/s)",
+          "description": "Flask reports numeric status codes, the FastAPI instrumentator groups them as 5xx.",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (service) (rate(http_requests_total{status=\"5xx\"}[1m]))",
+              "legendFormat": "{{service}}"
+            },
+            {
+              "refId": "B",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (service) (rate(flask_http_request_total{status=~\"5..\"}[1m]))",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "min": 0,
+              "custom": { "fillOpacity": 20, "lineWidth": 2, "showPoints": "never" },
+              "color": { "mode": "fixed", "fixedColor": "red" }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: movie-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.5.1
+          env:
+            # Anonymous viewing so the dashboard opens without a login during
+            # the demonstration; there is nothing private in it.
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Viewer
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: admin
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: provisioning-datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: provisioning-dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboard
+              mountPath: /var/lib/grafana/dashboards
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: provisioning-datasources
+          configMap:
+            name: grafana-provisioning
+            items:
+              - key: datasource.yml
+                path: datasource.yml
+        - name: provisioning-dashboards
+          configMap:
+            name: grafana-provisioning
+            items:
+              - key: dashboards.yml
+                path: dashboards.yml
+        - name: dashboard
+          configMap:
+            name: grafana-dashboard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: movie-app
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30030

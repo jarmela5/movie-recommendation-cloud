@@ -1,0 +1,127 @@
+services:
+  inference:
+    image: ghcr.io/ggml-org/llama.cpp:server@sha256:3cd94856897235684192b0eec34071b5ef30c6dfd7b12e4504527073a7758b8c
+    command:
+      - --hf-repo
+      - Qwen/Qwen2.5-1.5B-Instruct-GGUF
+      - --hf-file
+      - qwen2.5-1.5b-instruct-q4_k_m.gguf
+      - --alias
+      - movie-qwen
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "32768"
+      - --parallel
+      - "4"
+      - --threads
+      - "4"
+      - --n-gpu-layers
+      - "0"
+    environment:
+      LLAMA_CACHE: /models
+    volumes:
+      - model-cache:/models
+    mem_limit: 2g
+
+  catalog:
+    build: ./services/catalog
+    volumes:
+      - catalog-data:/app/data
+  user:
+    build: ./user
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    environment:
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+    volumes:
+      # PersistentVolumeClaim on Kubernetes.
+      - user-data:/app/data
+
+  recommendations:
+    build: ./services/recommendations
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    volumes:
+      - recommendations-data:/app/data
+    environment:
+      USER_SERVICE_URL: http://user:8000
+      CATALOG_SERVICE_URL: http://catalog:8000
+      REQUEST_TIMEOUT_SECONDS: "5"
+      INFERENCE_SERVICE_URL: http://inference:8080
+      INFERENCE_TIMEOUT_SECONDS: "90"
+      INFERENCE_MODEL: movie-qwen
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      RECOMMENDATIONS_DB_PATH: /app/data/recommendations.sqlite3
+    depends_on:
+      - inference
+      - user
+      - catalog
+
+  agent:
+    build: ./services/recommendations
+    command: ["python", "agent.py"]
+    restart: unless-stopped
+    environment:
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      USER_SERVICE_URL: http://user:8000
+      RECOMMENDATIONS_SERVICE_URL: http://recommendations:8000
+      AGENT_INTERVAL_SECONDS: ${AGENT_INTERVAL_SECONDS:-300}
+    depends_on:
+      user:
+        condition: service_healthy
+      recommendations:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - user
+      - catalog
+      - recommendations
+
+  # Monitoring server: scrapes /metrics from user, catalog and recommendations.
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - user
+      - catalog
+      - recommendations
+
+  # Dashboard. The datasource and the dashboard are provisioned from files, so
+  # it is usable immediately with no manual setup.
+  grafana:
+    image: grafana/grafana:11.5.1
+    ports:
+      - "3000:3000"
+    environment:
+      # Anonymous viewing keeps the demo simple; there is nothing private here.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./monitoring/grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  recommendations-data:
+  model-cache:
+  catalog-data:
+  user-data:

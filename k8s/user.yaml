@@ -1,0 +1,75 @@
+# Equivalente ao volume "user-data:/app/data" do docker-compose.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-data
+  namespace: movie-app
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path      # Node-local storage; provisioned by the Ansible deployment playbook.
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user
+  namespace: movie-app
+spec:
+  replicas: 1                       # ReadWriteOnce + dados em ficheiro: 1 réplica
+  strategy:
+    type: Recreate                  # evita 2 pods a usar o mesmo volume numa atualização
+  selector:
+    matchLabels:
+      app: user
+  template:
+    metadata:
+      labels:
+        app: user
+    spec:
+      containers:
+        - name: user
+          image: jarmela/user:v1
+          ports:
+            - containerPort: 8000
+          env:
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: internal-api
+                  key: token
+          volumeMounts:
+            - name: user-data
+              mountPath: /app/data
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: user-data
+          persistentVolumeClaim:
+            claimName: user-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user
+  namespace: movie-app
+spec:
+  type: ClusterIP
+  selector:
+    app: user
+  ports:
+    - port: 8000
+      targetPort: 8000

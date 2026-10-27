@@ -1,0 +1,246 @@
+# ---------------------------------------------------------------------------
+# Runs automatically on every commit. Four stages:
+#
+#   test         unit tests for every service
+#   security     SAST, dependency and secret analysis of the source code
+#   build-scan   build each container image and scan it for vulnerabilities
+#   integration  the four services running together, through nginx
+#
+# REPORTING vs BLOCKING
+# ---------------------
+# The security scanners currently *report* their findings instead of failing
+# the pipeline. This is deliberate: the first job of a security pipeline is to
+# establish what is actually wrong, before turning the findings into a rule
+# that stops everyone's work. Every finding is printed in the job log and kept
+# as a downloadable artifact.
+#
+# Each scanner below has a commented line showing exactly how to make it
+# blocking. Turning one on is a one-line change.
+# ---------------------------------------------------------------------------
+
+stages:
+  - test
+  - security
+  - build-scan
+  - integration
+
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+# Run on every commit: branch pushes, tags(might not be necessary) and merge requests. The second rule
+# stops GitLab creating two pipelines for a branch that has an open merge
+# request.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# Docker-in-Docker: lets a job build container images. Used by build-scan and
+# integration.
+.dind:
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "/certs/client"
+
+# ---------------------------------------------------------------------------
+# Stage 1: test
+# ---------------------------------------------------------------------------
+test:catalog:
+  stage: test
+  image: python:3.12-slim
+  script:
+    # The tests do "import movie_loader", so the service directory has to be
+    # the working directory, exactly like inside the container image.
+    - cd services/catalog
+    - pip install -r requirements.txt
+    - python -m unittest discover -s tests -v
+
+test:recommendations:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - cd services/recommendations
+    - pip install -r requirements.txt
+    - python -m unittest discover -s tests -v
+
+test:frontend:
+  stage: test
+  image: node:22-alpine
+  script:
+    # No package.json and no dependencies: the suite stubs fetch and the DOM.
+    # The *.test.js is required otherwise "node --test <directory>" tries to
+    # load the directory as a module and fails.
+    - node --test frontend/tests/*.test.js
+
+# ---------------------------------------------------------------------------
+# Stage 2: security
+#
+#   SAST                     -> sast:semgrep, sast:bandit
+#   dependency vulnerability -> deps:pip-audit
+#   container image scanning -> stage 3 (it needs a built image first)
+# ---------------------------------------------------------------------------
+sast:semgrep:
+  stage: security
+  image: semgrep/semgrep:latest
+  script:
+    # Four public rule sets. "p/..." names a ruleset in Semgrep's registry;
+    # no account or token is needed for these.
+    #
+    # The readable report goes to the job log and --json-output additionally
+    # writes the machine-readable artifact, both from this single scan.
+    #
+    # To make this blocking, add:  --error --severity=ERROR
+    - |
+      semgrep scan \
+        --config=p/security-audit \
+        --config=p/python \
+        --config=p/javascript \
+        --config=p/docker \
+        --metrics=off \
+        --json-output=semgrep.json .
+  artifacts:
+    when: always
+    paths:
+      - semgrep.json
+    expire_in: 1 week
+
+sast:bandit:
+  stage: security
+  image: python:3.12-slim
+  script:
+    - pip install bandit
+    # -ll  = report MEDIUM severity and above.
+    # --exit-zero = report findings without failing the job.
+    # To make this blocking, remove --exit-zero.
+    - bandit -r services user -ll --exit-zero -f txt -o bandit.txt
+    - cat bandit.txt
+  artifacts:
+    when: always
+    paths:
+      - bandit.txt
+    expire_in: 1 week
+
+deps:pip-audit:
+  stage: security
+  image: python:3.12-slim
+  script:
+    - pip install pip-audit
+    # Checks each service's requirements.txt against the Python advisory
+    # database. To make this blocking, delete the "|| true" below.
+    - |
+      : > pip-audit.txt
+      for svc in services/catalog services/recommendations user; do
+        echo "=== $svc ===" | tee -a pip-audit.txt
+        pip-audit -r "$svc/requirements.txt" --progress-spinner=off 2>&1 | tee -a pip-audit.txt || true
+      done
+      # The frontend is plain static JavaScript with no dependency manifest,
+      # so there is nothing for a dependency scanner to resolve.
+      echo "=== frontend: no dependency manifest (vanilla JS) ===" | tee -a pip-audit.txt
+  artifacts:
+    when: always
+    paths:
+      - pip-audit.txt
+    expire_in: 1 week
+
+secrets:gitleaks:
+  stage: security
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.18.4
+    entrypoint: [""]
+  variables:
+    # CI clones are shallow by default (only looks at the latest). Secret detection has to see the whole
+    # history, because a key deleted in a later commit is still leaked.
+    GIT_DEPTH: 0
+  script:
+    # --exit-code 0 reports without failing. To make this blocking, remove it.
+    - |
+      gitleaks detect \
+        --source . \
+        --redact --no-banner --verbose \
+        --exit-code 0 \
+        --report-format json --report-path gitleaks.json
+  artifacts:
+    when: always
+    paths:
+      - gitleaks.json
+    expire_in: 1 week
+
+# ---------------------------------------------------------------------------
+# Stage 3: build-scan
+#
+# One job per service, run in parallel. "parallel: matrix" means GitLab starts
+# four copies of this job with different SERVICE/CONTEXT values, so adding a
+# fifth service later is two new lines.
+# ---------------------------------------------------------------------------
+build-scan:
+  extends: .dind
+  stage: build-scan
+  parallel:
+    matrix:
+      - SERVICE: catalog
+        CONTEXT: services/catalog
+      - SERVICE: recommendations
+        CONTEXT: services/recommendations
+      - SERVICE: user
+        CONTEXT: user
+      - SERVICE: frontend
+        CONTEXT: frontend
+  before_script:
+    - apk add --no-cache curl
+    - curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh
+        | sh -s -- -b /usr/local/bin
+    - mkdir -p reports
+  script:
+    # A failure here is a genuinely broken Dockerfile, so it does fail the job.
+    # --platform linux/amd64 because the cluster nodes are amd64; an image
+    # built on an arm64 laptop fails there with "exec format error".
+    - docker build --platform linux/amd64 -t "g36/$SERVICE:$CI_COMMIT_SHORT_SHA" "$CONTEXT"
+    # Export to a tar and scan the file. This avoids the scanner needing to
+    # talk to the Docker daemon over TLS, which is the usual thing that breaks
+    # in docker-in-docker setups.
+    - docker save -o image.tar "g36/$SERVICE:$CI_COMMIT_SHORT_SHA"
+    # Full inventory, kept as an artifact.
+    - trivy image --input image.tar --scanners vuln --format json --output "reports/trivy-$SERVICE.json"
+    # Readable summary of the findings that matter: HIGH/CRITICAL with a fix
+    # available. --ignore-unfixed hides CVEs with no upstream patch, which
+    # cannot be acted on here.
+    # To make this blocking, change --exit-code 0 to --exit-code 1.
+    - |
+      trivy image --input image.tar --scanners vuln \
+        --severity HIGH,CRITICAL --ignore-unfixed \
+        --skip-db-update --exit-code 0
+    - rm -f image.tar
+  artifacts:
+    when: always
+    paths:
+      - reports/
+    expire_in: 1 week
+
+# ---------------------------------------------------------------------------
+# Stage 4: integration
+#
+# Reuses the disposable environment that already exists in the repository: its
+# own compose project name, no published host ports, database on tmpfs.
+# ---------------------------------------------------------------------------
+integration:
+  extends: .dind
+  stage: integration
+  # Left non-blocking until it has been seen to pass once in CI; the same
+  # suite is also documented as a manual step in the service README.
+  allow_failure: true
+  before_script:
+    - apk add --no-cache docker-cli-compose
+  script:
+    - docker compose -p g36-ci -f services/recommendations/tests/compose.integration.yml up -d --build
+    - docker compose -p g36-ci -f services/recommendations/tests/compose.integration.yml exec -T recommendations python tests/integration.py
+    - docker compose -p g36-ci -f services/recommendations/tests/compose.integration.yml exec -T recommendations python tests/agent_integration.py
+  after_script:
+    - docker compose -p g36-ci -f services/recommendations/tests/compose.integration.yml down -v || true

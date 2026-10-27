@@ -1,0 +1,28 @@
+# Separate network, no published ports, and a disposable User database in RAM.
+services:
+  inference:
+    build: ..
+    command: ["python", "tests/inference_stub.py"]
+  user:
+    build: ../../../user
+    environment:
+      INTERNAL_API_TOKEN: integration-only-token
+    tmpfs:
+      - /app/data
+  catalog:
+    build: ../../catalog
+  recommendations:
+    build: ..
+    volumes:
+      - recommendations-test-data:/app/data
+    environment:
+      INTERNAL_API_TOKEN: integration-only-token
+      USER_SERVICE_URL: http://user:8000
+      CATALOG_SERVICE_URL: http://catalog:8000
+      REQUEST_TIMEOUT_SECONDS: "5"
+      INFERENCE_SERVICE_URL: http://inference:8080
+  frontend:
+    build: ../../../frontend
+
+volumes:
+  recommendations-test-data:

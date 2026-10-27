@@ -1,0 +1,134 @@
+---
+- name: Deploy da aplicação
+  hosts: master
+  become: yes
+  become_user: root
+  become_method: sudo
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+  pre_tasks:
+    - name: Exigir imagens publicadas com uma versão explícita
+      assert:
+        that:
+          - app_image_prefix is defined
+          - app_image_tag is defined
+          - app_image_prefix | default('') is match('^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$')
+          - app_image_tag | default('') is match('^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$')
+          - app_image_tag | default('') not in ['latest', 'v1']
+        fail_msg: >-
+          Publica as quatro imagens primeiro. Passa -e app_image_prefix=REGISTO/GRUPO
+          -e app_image_tag=VERSAO (por exemplo o SHA do commit; não latest ou v1).
+
+  tasks:
+    - name: Criar diretório k8s no master
+      file:
+        path: /root/k8s
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Copiar manifests para o master
+      copy:
+        src: ../../../k8s/
+        dest: /root/k8s/
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Selecionar a versão publicada das imagens da aplicação
+      replace:
+        path: "/root/k8s/{{ item.file }}.yaml"
+        regexp: 'image: jarmela/{{ item.image }}:v1'
+        replace: 'image: {{ app_image_prefix }}/{{ item.image }}:{{ app_image_tag }}'
+      loop:
+        - { file: user, image: user }
+        - { file: catalog, image: catalog }
+        - { file: recommendations, image: recommendations }
+        - { file: agent, image: recommendations }
+        - { file: frontend, image: frontend }
+
+    - name: Instalar local-path-provisioner
+      command: >
+        kubectl apply -f
+        https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml
+
+    - name: Esperar pelo provisionador de volumes
+      command: >
+        kubectl -n local-path-storage rollout status deployment/local-path-provisioner
+        --timeout=300s
+      changed_when: false
+
+    - name: Criar namespace
+      command: kubectl apply -f /root/k8s/namespace.yaml
+
+    - name: Verificar se a chave interna já existe
+      command: kubectl -n movie-app get secret internal-api --ignore-not-found -o json
+      register: internal_secret
+      changed_when: false
+      no_log: true
+
+    - name: Validar a chave existente sem a substituir
+      assert:
+        that:
+          - ((internal_secret.stdout | from_json).get('data', {}).get('token', '') | b64decode | length) >= 32
+        fail_msg: O Secret internal-api existe mas não contém uma chave token válida.
+      when: internal_secret.stdout | length > 0
+      no_log: true
+
+    - name: Gerar chave para a primeira instalação
+      command: python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+      register: new_internal_token
+      when: internal_secret.stdout | length == 0
+      changed_when: false
+      no_log: true
+
+    - name: Criar Secret sem escrever a chave em ficheiros ou argumentos
+      command: kubectl create -f -
+      args:
+        stdin: "{{ {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': 'internal-api', 'namespace': 'movie-app'}, 'type': 'Opaque', 'stringData': {'token': new_internal_token.stdout}} | to_json }}"
+      when: internal_secret.stdout | length == 0
+      no_log: true
+
+    - name: Aplicar motor de inferência e cache do modelo
+      command: kubectl apply -f /root/k8s/inference.yaml
+
+    - name: Esperar pelo download e carregamento do modelo
+      command: kubectl -n movie-app rollout status deployment/inference --timeout=1900s
+      changed_when: false
+
+    - name: Aplicar serviços da aplicação e monitorização
+      command: >
+        kubectl apply
+        -f /root/k8s/catalog.yaml
+        -f /root/k8s/frontend.yaml
+        -f /root/k8s/monitoring.yaml
+        -f /root/k8s/recommendations.yaml
+        -f /root/k8s/user.yaml
+
+    # A ConfigMap mounted with subPath is not refreshed inside an existing pod.
+    - name: Atualizar pods do frontend quando a configuração Nginx mudar
+      command:
+        argv:
+          - kubectl
+          - -n
+          - movie-app
+          - patch
+          - deployment
+          - frontend
+          - --type=merge
+          - -p
+          - "{{ {'spec': {'template': {'metadata': {'annotations': {'nginx-config-checksum': lookup('file', '../../../k8s/frontend.yaml') | hash('sha256')}}}}} | to_json }}"
+
+    - name: Esperar pelos serviços da aplicação
+      command: "kubectl -n movie-app rollout status deployment/{{ item }} --timeout=600s"
+      loop: [user, catalog, recommendations, frontend]
+      changed_when: false
+
+    - name: Iniciar agente depois dos serviços
+      command: kubectl apply -f /root/k8s/agent.yaml
+
+    - name: Verificar arranque do processo do agente
+      command: kubectl -n movie-app rollout status deployment/agent --timeout=300s
+      changed_when: false

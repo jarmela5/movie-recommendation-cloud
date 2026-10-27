@@ -1,0 +1,39 @@
+# HTTP client only: no Service, public port or database volume.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  namespace: movie-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+    spec:
+      # Allow the current refresh request (timeout 120s) to finish on shutdown.
+      terminationGracePeriodSeconds: 130
+      containers:
+        - name: agent
+          image: jarmela/recommendations:v1
+          command: ["python", "agent.py"]
+          env:
+            - name: USER_SERVICE_URL
+              value: "http://user:8000"
+            - name: RECOMMENDATIONS_SERVICE_URL
+              value: "http://recommendations:8000"
+            - name: AGENT_INTERVAL_SECONDS
+              value: "300"
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: internal-api
+                  key: token
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "250m", memory: "128Mi" }

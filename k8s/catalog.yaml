@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  namespace: movie-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: catalog
+  template:
+    metadata:
+      labels:
+        app: catalog
+    spec:
+      containers:
+        - name: catalog
+          image: jarmela/catalog:v1
+          volumeMounts:
+            - name: catalog-data
+              mountPath: /app/data
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: catalog-data
+          persistentVolumeClaim:
+            claimName: catalog-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalog-data
+  namespace: movie-app
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: movie-app
+spec:
+  type: ClusterIP
+  selector:
+    app: catalog
+  ports:
+    - port: 8000
+      targetPort: 8000

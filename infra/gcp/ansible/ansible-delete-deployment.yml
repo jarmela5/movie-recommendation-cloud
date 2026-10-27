@@ -1,0 +1,8 @@
+---
+- hosts: master
+  become: yes
+  become_user: root
+  become_method: sudo
+  tasks:
+    - name: Delete deployment
+      shell: sudo kubectl delete -f /home/ubuntu/deployment.yaml

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Recommendation Hub</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Movie Recommendation Hub</h1>
+        <nav>
+            <a href="index.html">Discover</a>
+            <a href="movies.html">Movies</a>
+            <a href="recommendations.html" id="navRecommendations" class="hidden">Recommendations</a>
+            <a href="profile.html" id="navProfile" class="hidden">My profile</a>
+            <button id="authBtn">Log in</button>
+        </nav>
+    </header>
+
+    <section id="welcomeSection">
+        <h2>Find people who watch what you watch</h2>
+        <p>Describe your taste in movies and the platform's AI will recommend
+           titles that match it. Browse other people's profiles to discover
+           new interests.</p>
+    </section>
+
+    <section>
+        <h2>Public profiles</h2>
+        <input id="searchInput" placeholder="Search by username or tag...">
+        <button id="searchBtn">Search</button>
+        <div id="profileGrid" class="grid"></div>
+    </section>
+
+    <script src="common.js"></script>
+    <script>
+        const profileGrid = document.getElementById('profileGrid');
+
+        async function showProfiles() {
+            const query = document.getElementById('searchInput').value.trim();
+            profileGrid.innerHTML = '<p>Loading...</p>';
+
+            try {
+                const profiles = await api(
+                    `/api/user/profiles?q=${encodeURIComponent(query)}`);
+
+                profileGrid.innerHTML = profiles.length
+                    ? profiles.map(profile => `
+                        <a class="card" href="profile.html?user=${encodeURIComponent(profile.username)}">
+                            <h3>${esc(profile.display_name || profile.username)}</h3>
+                            <p>${esc(profile.bio || 'No bio yet.')}</p>
+                            <p><strong>Likes:</strong> ${esc(profile.likes_genres || '-')}</p>
+                        </a>
+                    `).join('')
+                    : '<p>No profiles found.</p>';
+            } catch (error) {
+                profileGrid.innerHTML = `<p>Could not load profiles: ${esc(error.message)}</p>`;
+            }
+        }
+
+        document.getElementById('searchBtn').onclick = showProfiles;
+        loadNav();
+        showProfiles();
+    </script>
+</body>
+</html>

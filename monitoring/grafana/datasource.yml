@@ -1,0 +1,15 @@
+# Auto-provisions the Prometheus datasource so Grafana needs no manual setup.
+# Mounted at /etc/grafana/provisioning/datasources/.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    # Fixed uid so the provisioned dashboard can reference it deterministically.
+    uid: prometheus
+    access: proxy
+    # Overridden to the in-cluster service name by k8s/monitoring.yaml.
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

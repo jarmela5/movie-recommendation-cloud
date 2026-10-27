@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-cache
+  namespace: movie-app
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference
+  namespace: movie-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  # The first start includes the model download.
+  progressDeadlineSeconds: 1800
+  selector:
+    matchLabels:
+      app: inference
+  template:
+    metadata:
+      labels:
+        app: inference
+    spec:
+      containers:
+        - name: inference
+          image: ghcr.io/ggml-org/llama.cpp:server@sha256:3cd94856897235684192b0eec34071b5ef30c6dfd7b12e4504527073a7758b8c
+          args:
+            - --hf-repo
+            - Qwen/Qwen2.5-1.5B-Instruct-GGUF
+            - --hf-file
+            - qwen2.5-1.5b-instruct-q4_k_m.gguf
+            - --alias
+            - movie-qwen
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8080"
+            - --ctx-size
+            - "32768"
+            - --parallel
+            - "4"
+            - --threads
+            - "4"
+            - --n-gpu-layers
+            - "0"
+          env:
+            - name: LLAMA_CACHE
+              value: /models
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+          # A busy model can return 503 on /health; that must not restart it.
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests: { cpu: "2", memory: "2Gi" }
+            limits: { cpu: "4", memory: "3Gi" }
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference
+  namespace: movie-app
+spec:
+  type: ClusterIP
+  selector:
+    app: inference
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -1,0 +1,32 @@
+# Real-model smoke tests. Start the production inference service first.
+# User accounts are disposable; the normal User volume is never mounted.
+services:
+  user:
+    build: ../../../user
+    environment:
+      INTERNAL_API_TOKEN: integration-only-token
+    tmpfs: [/app/data]
+    networks:
+      default:
+        aliases: [smoke-user]
+  catalog:
+    build: ../../catalog
+    networks:
+      default:
+        aliases: [smoke-catalog]
+  recommendations:
+    build: ..
+    environment:
+      INTERNAL_API_TOKEN: integration-only-token
+      USER_SERVICE_URL: http://smoke-user:8000
+      CATALOG_SERVICE_URL: http://smoke-catalog:8000
+      INFERENCE_SERVICE_URL: http://g36-inference-1:8080
+      INFERENCE_TIMEOUT_SECONDS: "90"
+    networks: [default, model]
+  frontend:
+    build: ../../../frontend
+    ports: ["127.0.0.1:18081:80"]
+networks:
+  model:
+    external: true
+    name: g36_default

@@ -1,0 +1,12 @@
+From the CLI:
+
+curl -s localhost:8080/api/user/profiles | python3 -m json.tool
+
+From SQL table:
+
+sudo docker compose exec user python -c "import sqlite3; [print(r) for r in sqlite3.connect('/app/data/users.db').execute('select id, username, email, created_at, last_login_at from users')]"
+
+From the VIEW:
+
+sudo docker compose exec user python -c "import sqlite3; c=sqlite3.connect('/app/data/users.db'); c.row_factory=sqlite3.Row; [print(dict(r)) for r in c.execute('select username, is_public, revision, bio, likes_genres, tags from v_profile')]"
+

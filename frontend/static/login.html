@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log in</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="card">
+        <h1>Welcome back</h1>
+        <p>Log in to see your recommendations.</p>
+
+        <form id="loginForm">
+            <label for="identifier">Username or e-mail</label>
+            <input id="identifier" autocomplete="username" required>
+
+            <label for="password">Password</label>
+            <input id="password" type="password" autocomplete="current-password" required>
+
+            <button type="submit">Log in</button>
+            <p id="message" role="status"></p>
+        </form>
+
+        <p>No account yet? <a href="signup.html" style="color: #fff;">Create one</a></p>
+    </main>
+
+    <script src="common.js"></script>
+    <script>
+        document.getElementById('loginForm').onsubmit = async (event) => {
+            event.preventDefault();
+            const message = document.getElementById('message');
+            message.textContent = 'Logging in...';
+
+            try {
+                // On success the API replies with a session cookie, so there is
+                // nothing for us to store.
+                await sendJSON('/api/user/login', {
+                    identifier: document.getElementById('identifier').value,
+                    password: document.getElementById('password').value,
+                });
+                window.location.href = 'recommendations.html';
+            } catch (error) {
+                message.textContent = error.message;
+            }
+        };
+    </script>
+</body>
+</html>

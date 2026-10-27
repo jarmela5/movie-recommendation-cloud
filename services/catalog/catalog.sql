@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS movies (
+    movie_id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    genres TEXT NOT NULL DEFAULT '',
+    rating REAL NOT NULL DEFAULT 0.0
+);

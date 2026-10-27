@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Movie Recommendation Hub</h1>
+        <nav>
+            <a href="index.html">Discover</a>
+            <a href="movies.html">Movies</a>
+            <a href="recommendations.html" id="navRecommendations" class="hidden">Recommendations</a>
+            <a href="profile.html" id="navProfile" class="hidden">My profile</a>
+            <button id="authBtn">Log in</button>
+        </nav>
+    </header>
+
+    <section id="view"><p>Loading...</p></section>
+
+    <!-- Only shown when you are looking at your own profile. -->
+    <section id="editSection" class="hidden">
+        <h2>Edit my taste</h2>
+        <form id="editForm">
+            <label for="display_name">Display name</label>
+            <input id="display_name">
+
+            <label for="bio">About my taste (the AI reads this)</label>
+            <textarea id="bio" rows="3"></textarea>
+
+            <label for="likes">Genres I like (comma separated)</label>
+            <input id="likes" placeholder="noir, thriller">
+
+            <label for="avoids">Genres I avoid</label>
+            <input id="avoids" placeholder="horror">
+
+            <label for="tags">Tags (comma separated)</label>
+            <input id="tags" placeholder="slow burn, practical effects">
+
+            <label for="era_from">Only movies from year</label>
+            <input id="era_from" type="number">
+
+            <label for="era_to">... up to year</label>
+            <input id="era_to" type="number">
+
+            <label for="max_runtime">Maximum runtime (minutes)</label>
+            <input id="max_runtime" type="number">
+
+            <label><input type="checkbox" id="is_public"> Show my profile to others</label>
+
+            <button type="submit">Save</button>
+            <p id="message" role="status"></p>
+        </form>
+    </section>
+
+    <script src="common.js"></script>
+    <script>
+        // No ?user= means "my own profile".
+        const wanted = new URLSearchParams(window.location.search).get('user');
+        const view = document.getElementById('view');
+        const editSection = document.getElementById('editSection');
+
+        function render(profile) {
+            view.innerHTML = `
+                <h2>${esc(profile.display_name || profile.username)}</h2>
+                <p>@${esc(profile.username)}</p>
+                <p>${esc(profile.bio || 'No bio yet.')}</p>
+                <p><strong>Likes:</strong> ${esc(profile.likes_genres || '-')}</p>
+                <p><strong>Avoids:</strong> ${esc(profile.avoids_genres || '-')}</p>
+                <p><strong>Tags:</strong> ${esc(profile.tags || '-')}</p>
+                <p><strong>Years:</strong> ${esc(profile.era_from || 'any')}
+                   to ${esc(profile.era_to || 'any')}</p>
+                <p><strong>Maximum runtime:</strong>
+                   ${profile.max_runtime ? esc(profile.max_runtime) + ' min' : 'any'}</p>
+            `;
+        }
+
+        function fillForm(profile) {
+            for (const field of ['display_name', 'bio', 'era_from', 'era_to', 'max_runtime']) {
+                document.getElementById(field).value = profile[field] ?? '';
+            }
+            document.getElementById('likes').value = profile.likes_genres ?? '';
+            document.getElementById('avoids').value = profile.avoids_genres ?? '';
+            document.getElementById('tags').value = profile.tags ?? '';
+            document.getElementById('is_public').checked = Boolean(profile.is_public);
+            editSection.classList.remove('hidden');
+        }
+
+        // "noir, thriller" -> ["noir", "thriller"]
+        function splitList(id) {
+            return document.getElementById(id).value
+                .split(',').map(item => item.trim()).filter(Boolean);
+        }
+
+        // An empty number box means "no limit", which the API stores as NULL.
+        function number(id) {
+            const value = document.getElementById(id).value;
+            return value === '' ? null : Number(value);
+        }
+
+        document.getElementById('editForm').onsubmit = async (event) => {
+            event.preventDefault();
+            const message = document.getElementById('message');
+            message.textContent = 'Saving...';
+
+            try {
+                const saved = await sendJSON('/api/user/profile', {
+                    display_name: document.getElementById('display_name').value,
+                    bio: document.getElementById('bio').value,
+                    era_from: number('era_from'),
+                    era_to: number('era_to'),
+                    max_runtime: number('max_runtime'),
+                    is_public: document.getElementById('is_public').checked ? 1 : 0,
+                    likes: splitList('likes'),
+                    avoids: splitList('avoids'),
+                    tags: splitList('tags'),
+                }, 'PUT');
+
+                render(saved);
+                message.textContent = 'Saved.';
+            } catch (error) {
+                message.textContent = error.message;
+            }
+        };
+
+        async function start() {
+            const me = await loadNav();
+            const username = wanted || me?.username;
+
+            if (!username) {
+                view.innerHTML = '<p>Please <a href="login.html">log in</a> to see your profile.</p>';
+                return;
+            }
+
+            try {
+                const profile = await api(
+                    `/api/user/profiles/${encodeURIComponent(username)}`);
+                render(profile);
+                if (me && profile.username === me.username) {
+                    fillForm(profile);
+                }
+            } catch (error) {
+                view.innerHTML = `<p>Could not load profile: ${esc(error.message)}</p>`;
+            }
+        }
+
+        start();
+    </script>
+</body>
+</html>

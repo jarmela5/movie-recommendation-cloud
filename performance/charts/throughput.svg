@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520">
+<rect width="100%" height="100%" fill="white"/>
+<text x="450.0" y="32" text-anchor="middle" font-size="22" font-family="Arial">Throughput under load</text>
+<text x="18" y="260.0" transform="rotate(-90 18 260.0)" text-anchor="middle" font-size="14" font-family="Arial">requests per second</text>
+<text x="450.0" y="502" text-anchor="middle" font-size="14" font-family="Arial">Concurrent virtual users</text>
+<line x1="90" y1="440.0" x2="870" y2="440.0" stroke="#e5e7eb"/>
+<text x="80" y="445.0" text-anchor="end" font-size="12" font-family="Arial">0.0</text>
+<line x1="90" y1="366.0" x2="870" y2="366.0" stroke="#e5e7eb"/>
+<text x="80" y="371.0" text-anchor="end" font-size="12" font-family="Arial">21.8</text>
+<line x1="90" y1="292.0" x2="870" y2="292.0" stroke="#e5e7eb"/>
+<text x="80" y="297.0" text-anchor="end" font-size="12" font-family="Arial">43.6</text>
+<line x1="90" y1="218.0" x2="870" y2="218.0" stroke="#e5e7eb"/>
+<text x="80" y="223.0" text-anchor="end" font-size="12" font-family="Arial">65.5</text>
+<line x1="90" y1="144.0" x2="870" y2="144.0" stroke="#e5e7eb"/>
+<text x="80" y="149.0" text-anchor="end" font-size="12" font-family="Arial">87.3</text>
+<line x1="90" y1="70.0" x2="870" y2="70.0" stroke="#e5e7eb"/>
+<text x="80" y="75.0" text-anchor="end" font-size="12" font-family="Arial">109.1</text>
+<polyline points="90.0,436.8 121.5,423.9 239.7,375.4 476.1,279.3 870.0,118.3" fill="none" stroke="#2563eb" stroke-width="3"/>
+<circle cx="90.0" cy="436.8" r="5" fill="#2563eb"/>
+<circle cx="121.5" cy="423.9" r="5" fill="#2563eb"/>
+<circle cx="239.7" cy="375.4" r="5" fill="#2563eb"/>
+<circle cx="476.1" cy="279.3" r="5" fill="#2563eb"/>
+<circle cx="870.0" cy="118.3" r="5" fill="#2563eb"/>
+<rect x="90" y="45" width="12" height="12" fill="#2563eb"/>
+<text x="108" y="56" font-size="12" font-family="Arial">catalog</text>
+<polyline points="90.0,439.9 121.5,439.6 239.7,417.4 476.1,360.4 870.0,295.2" fill="none" stroke="#dc2626" stroke-width="3"/>
+<circle cx="90.0" cy="439.9" r="5" fill="#dc2626"/>
+<circle cx="121.5" cy="439.6" r="5" fill="#dc2626"/>
+<circle cx="239.7" cy="417.4" r="5" fill="#dc2626"/>
+<circle cx="476.1" cy="360.4" r="5" fill="#dc2626"/>
+<circle cx="870.0" cy="295.2" r="5" fill="#dc2626"/>
+<rect x="270" y="45" width="12" height="12" fill="#dc2626"/>
+<text x="288" y="56" font-size="12" font-family="Arial">recommendations</text>
+<polyline points="90.0,436.8 121.5,424.0 239.7,376.4 476.1,282.2 870.0,254.5" fill="none" stroke="#16a34a" stroke-width="3"/>
+<circle cx="90.0" cy="436.8" r="5" fill="#16a34a"/>
+<circle cx="121.5" cy="424.0" r="5" fill="#16a34a"/>
+<circle cx="239.7" cy="376.4" r="5" fill="#16a34a"/>
+<circle cx="476.1" cy="282.2" r="5" fill="#16a34a"/>
+<circle cx="870.0" cy="254.5" r="5" fill="#16a34a"/>
+<rect x="450" y="45" width="12" height="12" fill="#16a34a"/>
+<text x="468" y="56" font-size="12" font-family="Arial">search</text>
+<line x1="90" y1="70" x2="90" y2="440" stroke="#111827"/>
+<line x1="90" y1="440" x2="870" y2="440" stroke="#111827"/>
+<text x="90.0" y="464" text-anchor="middle" font-size="12" font-family="Arial">1</text>
+<text x="121.5" y="464" text-anchor="middle" font-size="12" font-family="Arial">5</text>
+<text x="239.7" y="464" text-anchor="middle" font-size="12" font-family="Arial">20</text>
+<text x="476.1" y="464" text-anchor="middle" font-size="12" font-family="Arial">50</text>
+<text x="870.0" y="464" text-anchor="middle" font-size="12" font-family="Arial">100</text>
+</svg>

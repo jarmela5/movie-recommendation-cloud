@@ -1,0 +1,33 @@
+# Python cache e compilados
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ficheiros temporários e backups do editor/sistema
+*.bak
+.DS_Store
+Thumbs.db
+*Zone.Identifier
+.history/
+
+# Ambientes virtuais (se criares algum)
+venv/
+env/
+.env
+
+
+# Terraform
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/.terraform.tfstate.lock.info
+terraform.tfstate
+terraform.tfstate.*
+
+# Credenciais GCP
+infra/gcp/terraform/*.json
+
+# SSH private keys
+*.pem
+id_rsa
+id_ed25519

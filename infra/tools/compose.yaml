@@ -1,0 +1,11 @@
+services:
+  tools:
+    build:
+      context: ../..
+      dockerfile: infra/tools/Dockerfile
+    working_dir: /workspace/infra/gcp
+    volumes:
+      - ../..:/workspace
+      - ${SSH_DIR:-${HOME:-${USERPROFILE}}/.ssh}:/root/.ssh:ro
+    stdin_open: true
+    tty: true

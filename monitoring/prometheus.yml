@@ -1,0 +1,37 @@
+# Prometheus configuration for the local Docker Compose stack.
+# The Kubernetes cluster uses the equivalent config embedded in
+# k8s/monitoring.yaml, which discovers pods instead of fixed hostnames.
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  # Prometheus scrapes itself, so the monitoring server's own health is visible.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The three backend services. Each exposes /metrics on port 8000:
+  # user via prometheus_flask_exporter, catalog and recommendations via
+  # prometheus-fastapi-instrumentator.
+  #
+  # The frontend is plain nginx and exposes no metrics, so it is not scraped;
+  # its health is visible through the requests it proxies to these services.
+  - job_name: user
+    static_configs:
+      - targets: ["user:8000"]
+        labels:
+          service: user
+
+  - job_name: catalog
+    static_configs:
+      - targets: ["catalog:8000"]
+        labels:
+          service: catalog
+
+  - job_name: recommendations
+    static_configs:
+      - targets: ["recommendations:8000"]
+        labels:
+          service: recommendations

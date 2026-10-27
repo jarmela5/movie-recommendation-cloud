@@ -1,0 +1,17 @@
+# Tells Grafana to load any dashboard JSON it finds in /var/lib/grafana/dashboards,
+# so the dashboard appears automatically instead of being built by hand.
+# Mounted at /etc/grafana/provisioning/dashboards/.
+
+apiVersion: 1
+
+providers:
+  - name: g36
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

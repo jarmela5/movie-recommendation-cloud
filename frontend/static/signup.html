@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create account</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="card">
+        <h1>Create account</h1>
+
+        <form id="signupForm">
+            <label for="username">Username (3-32 characters)</label>
+            <input id="username" autocomplete="username" required>
+
+            <label for="email">E-mail</label>
+            <input id="email" type="email" autocomplete="email" required>
+
+            <label for="password">Password (at least 8 characters)</label>
+            <input id="password" type="password" autocomplete="new-password"
+                   minlength="8" required>
+
+            <button type="submit">Create account</button>
+            <p id="message" role="status"></p>
+        </form>
+
+        <p>Already have an account? <a href="login.html">Log in</a></p>
+    </main>
+
+    <script src="common.js"></script>
+    <script>
+        document.getElementById('signupForm').onsubmit = async (event) => {
+            event.preventDefault();
+            const message = document.getElementById('message');
+            message.textContent = 'Creating account...';
+
+            try {
+                // Registering logs you straight in, so go fill in the profile.
+                await sendJSON('/api/user/register', {
+                    username: document.getElementById('username').value,
+                    email: document.getElementById('email').value,
+                    password: document.getElementById('password').value,
+                });
+                window.location.href = 'profile.html';
+            } catch (error) {
+                message.textContent = error.message;
+            }
+        };
+    </script>
+</body>
+</html>

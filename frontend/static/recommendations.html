@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recommendations - Movie Recommendation Hub</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="recommendations-page">
+    <header>
+        <h1>Movie Recommendation Hub</h1>
+        <nav aria-label="Main navigation">
+            <a href="index.html">Discover</a>
+            <a href="movies.html">Movies</a>
+            <a href="recommendations.html" id="navRecommendations" class="hidden" aria-current="page">Recommendations</a>
+            <a href="profile.html" id="navProfile" class="hidden">My profile</a>
+            <button id="authBtn">Log in</button>
+        </nav>
+    </header>
+
+    <main>
+        <section class="recommendations-intro" aria-labelledby="recommendationsTitle">
+            <p class="eyebrow">YOUR NEXT MOVIE NIGHT</p>
+            <h2 id="recommendationsTitle">Find your next favourite.</h2>
+            <p>See your saved recommendations when you arrive, or ask the local AI model for a new selection.</p>
+            <p class="recommendations-notice"><strong>AI-assisted recommendations</strong> — the model chooses from real catalogue candidates. Your excluded genres and profile year range remain enforced. Explanations use catalogue facts; request interpretation may be imperfect.</p>
+        </section>
+
+        <section id="sessionPanel" aria-labelledby="sessionTitle">
+            <h2 id="sessionTitle">Checking your session</h2>
+            <p id="sessionMessage" role="status">One moment…</p>
+            <a id="sessionLogin" class="hidden" href="login.html">Log in to continue</a>
+            <button id="sessionRetry" class="hidden" type="button">Try again</button>
+        </section>
+
+        <div id="recommendationsContent" class="hidden">
+            <section aria-labelledby="requestTitle">
+                <div class="recommendations-heading">
+                    <div>
+                        <p class="eyebrow">EXPLORE YOUR GENRES</p>
+                        <h2 id="requestTitle">Find films for your taste</h2>
+                    </div>
+                    <a href="profile.html">Edit my preferences →</a>
+                </div>
+                <p id="preferencesHint" class="hidden">Set the genres you enjoy or avoid in <a href="profile.html">your profile</a> to personalise your suggestions.</p>
+                <form id="recommendationForm" class="recommendation-form" aria-busy="false">
+                    <label for="recommendationPrompt">Describe your movie mood <span class="optional-label">(optional)</span></label>
+                    <textarea id="recommendationPrompt" rows="3" maxlength="500" placeholder="Quero uma comédia dos anos 90" aria-describedby="promptHelp"></textarea>
+                    <p id="promptHelp" class="form-help">Ask for genres or release years, in English or Portuguese. Requested genres replace your preferred genres for this search; exclusions still apply. Runtime, cast, director and plot constraints are not supported. Leave blank to use your profile.</p>
+                    <button id="recommendationSubmit" type="submit">Get recommendations</button>
+                </form>
+                <p id="savedDetails" class="form-help"></p>
+                <button id="savedRefresh" type="button">Check saved recommendations</button>
+                <p id="recommendationStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+                <div id="recommendationResults" aria-busy="false"></div>
+                <button id="recommendationRetry" class="hidden" type="button">Try again</button>
+            </section>
+        </div>
+    </main>
+    <script src="common.js"></script>
+    <script src="recommendations.js?v=saved-results-1"></script>
+</body>
+</html>
